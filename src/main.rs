@@ -10,7 +10,10 @@ use config::{
     clear_recent, get_merged_recent, note_current, push_recent, read_current, read_key,
     restore_recent, store_key,
 };
-use daemon::{add_connection, connect_kind, disconnect_all, get_state, is_alive, is_tunnel_up};
+use daemon::{
+    add_connection, connect_kind, disconnect_all, get_state, is_alive, is_tunnel_up,
+    trigger_app_action, verify_network_connectivity,
+};
 use geo::fetch_geo;
 use models::{LocationItem, Server, WidgetStatus};
 use picker::{pick_fastest, pick_nearest, pick_random, pick_same, pick_usa};
@@ -133,6 +136,7 @@ fn do_connect(s: &Server) {
         Some(k) => k,
         None => {
             eprintln!("No WireGuard key yet. Connect once through Surfshark app, then run: omarchy-surfshark key-import");
+            let _ = trigger_app_action("open");
             exit(7);
         }
     };
@@ -147,12 +151,29 @@ fn do_connect(s: &Server) {
         exit(4);
     }
 
+    // Fail-Safe Watchdog:
+    // If WireGuard brought default routing up but handshake failed (e.g. PQ preshared key missing),
+    // immediately tear down connection to prevent freezing network connectivity.
+    if !verify_network_connectivity(std::time::Duration::from_millis(3200)) {
+        let _ = disconnect_all();
+        eprintln!("Handshake failed (Surfshark Post-Quantum key authorization required). Reverted connection to protect network.");
+        let _ = trigger_app_action("open");
+        exit(8);
+    }
+
     push_recent(s);
     note_current(&s.connection_name);
     println!("{} · {}", s.location, s.country);
 }
 
 fn cmd_on() {
+    // If the official Surfshark desktop client is running, trigger connection via D-Bus tray
+    // so the client authenticates, requests PQS preshared keys, and establishes tunnel safely.
+    if trigger_app_action("quick_connect").is_ok() {
+        println!("Connecting via Surfshark...");
+        return;
+    }
+
     let recents = get_merged_recent(Some(1));
     let servers = read_servers();
     if let Some(first) = recents.first() {
@@ -238,11 +259,20 @@ fn cmd_connect(host: &str) {
 }
 
 fn cmd_off() {
+    let _ = trigger_app_action("disconnect");
     if let Err(e) = disconnect_all() {
         eprintln!("disconnect error: {}", e);
         exit(4);
     }
     println!("disconnected");
+}
+
+fn cmd_open() {
+    if let Err(e) = trigger_app_action("open") {
+        eprintln!("open error: {}", e);
+        exit(1);
+    }
+    println!("opened Surfshark client");
 }
 
 fn cmd_recent(n: Option<usize>) {
@@ -307,6 +337,7 @@ Commands:
   recent-restore    restore recent list
   key-import        import WireGuard key from NetworkManager
   state             raw getState() JSON
+  open              open / focus the official Surfshark GUI
 "
     );
 }
@@ -335,8 +366,9 @@ fn main() {
                 exit(1);
             }
         }
-        "on" => cmd_on(),
+        "on" | "quick-connect" => cmd_on(),
         "off" | "disconnect" => cmd_off(),
+        "open" | "gui" => cmd_open(),
         "recent" => {
             let n = args.get(2).and_then(|s| s.parse::<usize>().ok());
             cmd_recent(n);

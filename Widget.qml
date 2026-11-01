@@ -124,6 +124,12 @@ Panel {
     runAction(root.shown ? "off" : "on")
   }
 
+  function openApp() {
+    if (actionProcess.running) return
+    actionProcess.command = [root.script, "open"]
+    actionProcess.running = true
+  }
+
   function loadLocations() {
     if (locationsProcess.running || root.allLocations.length > 0) return
     locationsProcess.command = [root.script, "locations"]
@@ -244,6 +250,7 @@ Panel {
     function same(): string { root.runAction("same"); return "ok" }
     function usa(): string { root.runAction("usa"); return "ok" }
     function random(): string { root.runAction("random"); return "ok" }
+    function openApp(): string { root.openApp(); return "ok" }
   }
 
   implicitWidth: barButton.implicitWidth
@@ -295,6 +302,7 @@ Panel {
         else if (k === "s") root.runAction("same")
         else if (k === "u") root.runAction("usa")
         else if (k === "x") root.runAction("random")
+        else if (k === "o") root.openApp()
         else if (k === "r") root.refresh()
         else if (k === "/") searchInput.forceActiveFocus()
       }
@@ -538,6 +546,14 @@ Panel {
               subtitle: "Shuffle to a random location"
               tag: "DICE"
               onClicked: root.runAction("random")
+            }
+
+            QuickActionTile {
+              width: parent.width
+              title: "Open Surfshark Client"
+              subtitle: "Select any country or server in official GUI"
+              tag: "APP"
+              onClicked: root.openApp()
             }
           }
 
