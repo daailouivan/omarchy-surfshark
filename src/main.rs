@@ -11,8 +11,8 @@ use config::{
     restore_recent, store_key,
 };
 use daemon::{
-    add_connection, connect_kind, disconnect_all, get_state, is_alive, is_tunnel_up,
-    trigger_app_action, verify_network_connectivity,
+    add_connection, connect_kind, disconnect_all, get_state, get_tray_state, is_alive,
+    is_tunnel_up, trigger_app_action, verify_network_connectivity,
 };
 use geo::fetch_geo;
 use models::{LocationItem, Server, WidgetStatus};
@@ -39,7 +39,15 @@ fn cmd_status() {
         serde_json::Value::Null
     };
 
-    let connected = is_tunnel_up(&state);
+    let tray = get_tray_state();
+    let tray_connected = tray.as_ref().map(|t| t.connected).unwrap_or(false);
+    let daemon_connected = is_tunnel_up(&state);
+    let sys_connected = std::path::Path::new("/sys/class/net/surfshark_wg").exists()
+        || std::path::Path::new("/sys/class/net/tun0").exists();
+
+    let geo = fetch_geo();
+    let connected = daemon_connected || tray_connected || sys_connected || geo.secured;
+
     let key_avail = ensure_key().is_some();
     let servers = read_servers();
     let has_servers = !servers.is_empty();
@@ -54,31 +62,41 @@ fn cmd_status() {
         .as_ref()
         .and_then(|ep| servers.iter().find(|s| &s.connection_name == ep));
 
-    let geo = fetch_geo();
+    let (loc, country, country_code) = if connected {
+        if let Some(s) = active_server {
+            (s.location.clone(), s.country.clone(), s.country_code.clone())
+        } else if let Some(ref t) = tray {
+            if t.location.is_some() || t.country.is_some() {
+                (
+                    t.location.clone().unwrap_or_default(),
+                    t.country.clone().unwrap_or_default(),
+                    String::new(),
+                )
+            } else if !geo.city.is_empty() {
+                (geo.city.clone(), geo.country.clone(), geo.country_code.clone())
+            } else {
+                ("Connected".to_string(), String::new(), String::new())
+            }
+        } else if !geo.city.is_empty() {
+            (geo.city.clone(), geo.country.clone(), geo.country_code.clone())
+        } else {
+            ("Connected".to_string(), String::new(), String::new())
+        }
+    } else {
+        (String::new(), String::new(), String::new())
+    };
 
     let status = WidgetStatus {
         daemon: daemon_up,
         configured: key_avail && has_servers,
         connected,
         endpoint: endpoint.clone(),
-        location: if connected {
-            active_server.map(|s| s.location.clone()).unwrap_or_default()
-        } else {
-            String::new()
-        },
-        country: if connected {
-            active_server.map(|s| s.country.clone()).unwrap_or_default()
-        } else {
-            String::new()
-        },
-        country_code: if connected {
-            active_server.map(|s| s.country_code.clone()).unwrap_or_default()
-        } else {
-            String::new()
-        },
+        location: loc,
+        country,
+        country_code,
         load: active_server.and_then(|s| s.load),
         ip: geo.ip,
-        secured: geo.secured,
+        secured: connected || geo.secured,
         my_country: geo.country,
         my_country_code: geo.country_code,
         my_city: geo.city,
@@ -193,6 +211,10 @@ fn cmd_on() {
 }
 
 fn cmd_fastest() {
+    if trigger_app_action("quick_connect").is_ok() {
+        println!("Connecting via Surfshark...");
+        return;
+    }
     let servers = read_servers();
     let geo = fetch_geo();
     let suggested = read_suggested();
@@ -227,6 +249,10 @@ fn cmd_same() {
 }
 
 fn cmd_usa(preferred: Option<&str>) {
+    if trigger_app_action("United States").is_ok() {
+        println!("Connecting to United States...");
+        return;
+    }
     let servers = read_servers();
     if let Some(s) = pick_usa(&servers, preferred) {
         do_connect(s);
@@ -250,9 +276,22 @@ fn cmd_random() {
 
 fn cmd_connect(host: &str) {
     let servers = read_servers();
-    if let Some(s) = servers.iter().find(|s| s.connection_name == host) {
+    let target = servers.iter().find(|s| s.connection_name == host);
+
+    if let Some(s) = target {
+        if trigger_app_action(&s.location).is_ok() || trigger_app_action(&s.country).is_ok() {
+            println!("Connecting to {} · {}...", s.location, s.country);
+            return;
+        }
+    }
+
+    if let Some(s) = target {
         do_connect(s);
     } else {
+        if trigger_app_action(host).is_ok() {
+            println!("Connecting to {}...", host);
+            return;
+        }
         eprintln!("server not found: {}", host);
         exit(5);
     }

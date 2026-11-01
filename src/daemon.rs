@@ -272,6 +272,41 @@ pub fn get_tray_menu(bus: &str) -> Result<Vec<DbusMenuItem>, String> {
     Ok(parse_dbusmenu_layout(&text))
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct TrayState {
+    pub connected: bool,
+    pub location: Option<String>,
+    pub country: Option<String>,
+}
+
+pub fn get_tray_state() -> Option<TrayState> {
+    let bus = find_surfshark_tray_bus()?;
+    let menu = get_tray_menu(&bus).ok()?;
+
+    let mut state = TrayState::default();
+    for item in &menu {
+        if item.label.contains("Disconnect") && item.visible {
+            state.connected = true;
+        }
+        if item.toggle_state == Some(1) {
+            state.connected = true;
+            let clean: String = item
+                .label
+                .chars()
+                .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-')
+                .collect();
+            let clean = clean.trim();
+            if let Some((c, l)) = clean.split_once(" - ") {
+                state.country = Some(c.trim().to_string());
+                state.location = Some(l.trim().to_string());
+            } else if !clean.is_empty() {
+                state.location = Some(clean.to_string());
+            }
+        }
+    }
+    Some(state)
+}
+
 pub fn trigger_menu_event(bus: &str, item_id: i32) -> Result<(), String> {
     let output = std::process::Command::new("busctl")
         .args([
@@ -284,8 +319,8 @@ pub fn trigger_menu_event(bus: &str, item_id: i32) -> Result<(), String> {
             "isvu",
             &item_id.to_string(),
             "clicked",
-            "s",
-            "",
+            "i",
+            "0",
             "0",
         ])
         .output()
@@ -329,7 +364,7 @@ pub fn trigger_app_action(action: &str) -> Result<(), String> {
 
     match action {
         "quick_connect" | "on" => {
-            if let Some(item) = menu.iter().find(|i| i.label == "Quick connect" && i.visible) {
+            if let Some(item) = menu.iter().find(|i| i.label.contains("Quick connect") && i.visible) {
                 trigger_menu_event(&b, item.id)
             } else if let Some(recent) = menu.iter().find(|i| i.toggle_state.is_some()) {
                 trigger_menu_event(&b, recent.id)
@@ -339,7 +374,7 @@ pub fn trigger_app_action(action: &str) -> Result<(), String> {
         }
         "disconnect" | "off" => {
             let mut res = Ok(());
-            if let Some(item) = menu.iter().find(|i| i.label == "Disconnect" && i.visible) {
+            if let Some(item) = menu.iter().find(|i| i.label.contains("Disconnect") && i.visible) {
                 res = trigger_menu_event(&b, item.id);
             }
             // Always ensure local daemon tear-down as fallback safety
@@ -353,7 +388,19 @@ pub fn trigger_app_action(action: &str) -> Result<(), String> {
                 Err("No recent location found in Surfshark tray menu".to_string())
             }
         }
-        other => Err(format!("unknown app action: {}", other)),
+        other => {
+            let lower = other.to_lowercase();
+            if let Some(item) = menu.iter().find(|i| {
+                let l = i.label.to_lowercase();
+                l.contains(&lower) || lower.contains(&l)
+            }) {
+                trigger_menu_event(&b, item.id)
+            } else {
+                // If specific location not in tray recents, open the official client window
+                let _ = trigger_app_action("open");
+                Err(format!("'{}' not in quick tray menu. Opened Surfshark client to select.", other))
+            }
+        }
     }
 }
 

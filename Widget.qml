@@ -8,7 +8,7 @@ import qs.Ui
 
 // Surfshark VPN Omarchy bar widget with high-performance native Rust backend.
 // Designed with a cyber-security aesthetic, distinctive telemetry overview,
-// quick-action tiles, recent history, and live location filtering.
+// quick-action tiles, right-click context menu, and responsive layout.
 Panel {
   id: root
 
@@ -60,7 +60,7 @@ Panel {
   // Location search
   property var allLocations: []
   property string query: ""
-  readonly property int maxResults: 10
+  readonly property int maxResults: 8
   readonly property var matches: {
     var q = root.query.trim().toLowerCase()
     if (q === "") return []
@@ -162,10 +162,11 @@ Panel {
     root.loadValue = d.load
     root.recentList = d.recent || []
 
-    if (!actionProcess.running && root.desired >= 0
-        && (root.desired === 1) === root.connected) {
-      root.desired = -1
-      root.busy = false
+    if (!actionProcess.running && root.desired >= 0) {
+      if ((root.desired === 1) === root.connected) {
+        root.desired = -1
+        root.busy = false
+      }
     }
   }
 
@@ -184,6 +185,17 @@ Panel {
     running: true
     repeat: true
     onTriggered: root.refresh()
+  }
+
+  // Fail-safe timer to prevent busy state hang
+  Timer {
+    interval: 5000
+    running: root.busy
+    repeat: false
+    onTriggered: {
+      root.busy = false
+      root.desired = -1
+    }
   }
 
   Process {
@@ -253,6 +265,45 @@ Panel {
     function openApp(): string { root.openApp(); return "ok" }
   }
 
+  // Right-click Quick Control Context Menu
+  Menu {
+    id: contextMenu
+
+    MenuItem {
+      text: root.shown ? "Disconnect VPN" : "Quick Connect"
+      onTriggered: root.toggleVpn()
+    }
+
+    MenuItem {
+      text: "Open Surfshark App"
+      onTriggered: root.openApp()
+    }
+
+    MenuSeparator {}
+
+    MenuItem {
+      text: "Connect: Fastest Location"
+      onTriggered: root.runAction("fastest")
+    }
+
+    MenuItem {
+      text: "Connect: United States (" + root.usLabel + ")"
+      onTriggered: root.runAction("usa")
+    }
+
+    MenuSeparator {}
+
+    MenuItem {
+      text: "Refresh Status"
+      onTriggered: root.refresh()
+    }
+
+    MenuItem {
+      text: "Open Widget Details..."
+      onTriggered: root.open()
+    }
+  }
+
   implicitWidth: barButton.implicitWidth
   implicitHeight: barButton.implicitHeight
 
@@ -273,9 +324,13 @@ Panel {
       }
     }
     onPressed: function(buttonCode) {
-      if (buttonCode === Qt.RightButton) root.toggleVpn()
-      else if (buttonCode === Qt.MiddleButton) root.refresh()
-      else root.toggle()
+      if (buttonCode === Qt.RightButton) {
+        contextMenu.popup()
+      } else if (buttonCode === Qt.MiddleButton) {
+        root.refresh()
+      } else {
+        root.toggle()
+      }
     }
   }
 
@@ -286,8 +341,8 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(380))
-    contentHeight: panel.fittedContentHeight(panelColumn.implicitHeight, Style.space(620))
+    contentWidth: panel.fittedContentWidth(Style.space(360))
+    contentHeight: panel.fittedContentHeight(panelColumn.implicitHeight, Style.space(430))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -321,74 +376,127 @@ Panel {
         Column {
           id: panelColumn
           width: panelScroll.width
-          spacing: Style.space(14)
+          spacing: Style.space(10)
           padding: Style.space(12)
 
-          // Header Card with Cyber Shield Emblem & Toggle Switch
+          // Unified Status & Telemetry Card
           Rectangle {
             width: parent.width - Style.space(24)
             anchors.horizontalCenter: parent.horizontalCenter
-            implicitHeight: headerRow.implicitHeight + Style.space(20)
+            implicitHeight: cardContent.implicitHeight + Style.space(18)
             radius: Style.space(10)
             color: root.cardBackground
             border.color: root.cardBorder
             border.width: 1
 
-            RowLayout {
-              id: headerRow
+            ColumnLayout {
+              id: cardContent
               anchors.fill: parent
-              anchors.margins: Style.space(12)
-              spacing: Style.space(12)
+              anchors.margins: Style.space(10)
+              spacing: Style.space(8)
 
-              SurfsharkIcon {
-                Layout.preferredWidth: Style.space(36)
-                Layout.preferredHeight: Style.space(36)
-                color: root.shown ? root.accentColor : root.dim
-                active: root.shown
-                crossed: !root.shown
+              // Top row: Shield, status header, switch
+              RowLayout {
+                Layout.fillWidth: true
+                spacing: Style.space(10)
+
+                SurfsharkIcon {
+                  Layout.preferredWidth: Style.space(28)
+                  Layout.preferredHeight: Style.space(28)
+                  color: root.shown ? root.accentColor : root.dim
+                  active: root.shown
+                  crossed: !root.shown
+                }
+
+                ColumnLayout {
+                  Layout.fillWidth: true
+                  spacing: Style.space(2)
+
+                  Text {
+                    text: root.shown && root.location !== "" ? root.location : "Surfshark VPN"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.title
+                    font.bold: true
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                  }
+
+                  RowLayout {
+                    spacing: Style.space(5)
+
+                    Rectangle {
+                      width: Style.space(6)
+                      height: Style.space(6)
+                      radius: width / 2
+                      color: !root.daemonReady ? root.warningColor
+                           : (root.shown ? root.successColor : root.dim)
+                    }
+
+                    Text {
+                      text: root.statusText.toUpperCase()
+                      color: root.dim
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.caption
+                      font.bold: true
+                    }
+                  }
+                }
+
+                ToggleSwitch {
+                  checked: root.shown
+                  busy: root.busy
+                  enabled: root.configured && root.daemonReady
+                  foreground: root.foreground
+                  onToggled: root.toggleVpn()
+                }
               }
 
-              ColumnLayout {
+              // Divider
+              Rectangle {
                 Layout.fillWidth: true
-                spacing: Style.space(2)
+                height: 1
+                color: root.cardBorder
+                opacity: 0.5
+              }
 
-                Text {
-                  text: root.shown && root.location !== "" ? root.location : "Surfshark VPN"
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.title
-                  font.bold: true
-                  elide: Text.ElideRight
-                  Layout.fillWidth: true
+              // Telemetry Info Row
+              RowLayout {
+                Layout.fillWidth: true
+                spacing: Style.space(12)
+
+                RowLayout {
+                  spacing: Style.space(4)
+                  Text { text: "IP:"; color: root.dim; font.pixelSize: Style.font.caption; font.bold: true }
+                  Text { text: root.publicIp || "—"; color: root.foreground; font.pixelSize: Style.font.caption; font.bold: true }
                 }
 
                 RowLayout {
-                  spacing: Style.space(6)
-
-                  Rectangle {
-                    width: Style.space(8)
-                    height: Style.space(8)
-                    radius: width / 2
-                    color: !root.daemonReady ? root.warningColor
-                         : (root.shown ? root.successColor : root.dim)
-                  }
-
+                  Layout.fillWidth: true
+                  spacing: Style.space(4)
+                  Text { text: "LOC:"; color: root.dim; font.pixelSize: Style.font.caption; font.bold: true }
                   Text {
-                    text: root.statusText.toUpperCase()
-                    color: root.dim
-                    font.family: root.fontFamily
+                    text: root.shown ? (root.location + (root.country ? (", " + root.country) : ""))
+                                     : (root.myCity ? (root.myCity + ", " + root.myCountryCode) : (root.myCountry || "—"))
+                    color: root.foreground
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                  }
+                }
+
+                RowLayout {
+                  visible: root.loadValue !== null
+                  spacing: Style.space(4)
+                  Text { text: "LOAD:"; color: root.dim; font.pixelSize: Style.font.caption; font.bold: true }
+                  Text {
+                    text: root.loadValue !== null ? (root.loadValue + "%") : "—"
+                    color: root.accentColor
                     font.pixelSize: Style.font.caption
                     font.bold: true
                   }
                 }
-              }
-
-              ToggleSwitch {
-                checked: root.shown
-                busy: root.busy
-                enabled: root.configured && root.daemonReady
-                foreground: root.foreground
-                onToggled: root.toggleVpn()
               }
             }
           }
@@ -398,7 +506,7 @@ Panel {
             width: parent.width - Style.space(24)
             anchors.horizontalCenter: parent.horizontalCenter
             visible: root.lastError !== ""
-            implicitHeight: errorText.implicitHeight + Style.space(16)
+            implicitHeight: errorText.implicitHeight + Style.space(14)
             radius: Style.space(8)
             color: Qt.rgba(0.9, 0.2, 0.2, 0.12)
             border.color: Qt.rgba(0.9, 0.2, 0.2, 0.3)
@@ -407,7 +515,7 @@ Panel {
             Text {
               id: errorText
               anchors.fill: parent
-              anchors.margins: Style.space(10)
+              anchors.margins: Style.space(8)
               text: root.lastError
               color: root.foreground
               font.family: root.fontFamily
@@ -421,7 +529,7 @@ Panel {
             width: parent.width - Style.space(24)
             anchors.horizontalCenter: parent.horizontalCenter
             visible: !root.configured || !root.daemonReady
-            implicitHeight: noticeText.implicitHeight + Style.space(16)
+            implicitHeight: noticeText.implicitHeight + Style.space(14)
             radius: Style.space(8)
             color: Qt.rgba(root.warningColor.r, root.warningColor.g, root.warningColor.b, 0.10)
             border.color: Qt.rgba(root.warningColor.r, root.warningColor.g, root.warningColor.b, 0.25)
@@ -430,10 +538,10 @@ Panel {
             Text {
               id: noticeText
               anchors.fill: parent
-              anchors.margins: Style.space(10)
+              anchors.margins: Style.space(8)
               text: !root.daemonReady
-                ? "The Surfshark daemon (surfsharkd) is not running.\nStart the official client, or run: systemctl --user start surfsharkd"
-                : "Connect once through the official Surfshark app to register the active account key."
+                ? "Surfshark daemon offline. Start official app or run: systemctl --user start surfsharkd"
+                : "Open the official Surfshark app once to register account keys."
               color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
@@ -441,128 +549,50 @@ Panel {
             }
           }
 
-          // Telemetry Details Tile
-          Rectangle {
+          // Quick Routing Grid (Compact 2x2)
+          GridLayout {
             width: parent.width - Style.space(24)
             anchors.horizontalCenter: parent.horizontalCenter
-            visible: root.daemonReady
-            implicitHeight: telemetryRow.implicitHeight + Style.space(16)
-            radius: Style.space(8)
-            color: root.cardBackground
-            border.color: root.cardBorder
-            border.width: 1
-
-            RowLayout {
-              id: telemetryRow
-              anchors.fill: parent
-              anchors.margins: Style.space(10)
-              spacing: Style.space(16)
-
-              ColumnLayout {
-                Layout.fillWidth: true
-                spacing: Style.space(2)
-                Text { text: "PUBLIC IP"; color: root.dim; font.pixelSize: Style.font.caption; font.bold: true }
-                Text { text: root.publicIp || "—"; color: root.foreground; font.pixelSize: Style.font.body; font.bold: true }
-              }
-
-              ColumnLayout {
-                Layout.fillWidth: true
-                spacing: Style.space(2)
-                Text { text: "ORIGIN"; color: root.dim; font.pixelSize: Style.font.caption; font.bold: true }
-                Text {
-                  text: root.myCity ? (root.myCity + ", " + root.myCountryCode) : (root.myCountry || "—")
-                  color: root.foreground
-                  font.pixelSize: Style.font.body
-                  font.bold: true
-                  elide: Text.ElideRight
-                }
-              }
-
-              ColumnLayout {
-                Layout.preferredWidth: Style.space(60)
-                visible: root.loadValue !== null
-                spacing: Style.space(2)
-                Text { text: "LOAD"; color: root.dim; font.pixelSize: Style.font.caption; font.bold: true }
-                Text {
-                  text: root.loadValue !== null ? (root.loadValue + "%") : "—"
-                  color: root.accentColor
-                  font.pixelSize: Style.font.body
-                  font.bold: true
-                }
-              }
-            }
-          }
-
-          // Quick Connect Grid
-          Column {
-            width: parent.width - Style.space(24)
-            anchors.horizontalCenter: parent.horizontalCenter
-            spacing: Style.space(6)
+            columns: 2
+            rowSpacing: Style.space(6)
+            columnSpacing: Style.space(6)
             visible: root.configured && root.daemonReady
 
-            Text {
-              text: "QUICK ROUTING"
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              font.bold: true
-            }
-
-            QuickActionTile {
-              width: parent.width
+            CompactActionTile {
+              Layout.fillWidth: true
               title: "Fastest Location"
-              subtitle: "Optimized low latency connection"
               tag: "AUTO"
               onClicked: root.runAction("fastest")
             }
 
-            QuickActionTile {
-              width: parent.width
-              title: "Nearest Country"
-              subtitle: "Closest international server"
-              tag: "NEAR"
-              onClicked: root.runAction("nearest")
+            CompactActionTile {
+              Layout.fillWidth: true
+              title: "Open Desktop App"
+              tag: "APP"
+              onClicked: root.openApp()
             }
 
-            QuickActionTile {
-              width: parent.width
-              title: "Local Exit"
-              subtitle: root.myCountry ? ("Stay in " + root.myCountry) : "Local country"
-              tag: root.myCountryCode || "HOME"
-              onClicked: root.runAction("same")
-            }
-
-            QuickActionTile {
-              width: parent.width
+            CompactActionTile {
+              Layout.fillWidth: true
               title: "United States"
-              subtitle: root.usLabel
               tag: "US"
               onClicked: root.runAction("usa")
             }
 
-            QuickActionTile {
-              width: parent.width
-              title: "Random Country"
-              subtitle: "Shuffle to a random location"
+            CompactActionTile {
+              Layout.fillWidth: true
+              title: "Random Shuffle"
               tag: "DICE"
               onClicked: root.runAction("random")
             }
-
-            QuickActionTile {
-              width: parent.width
-              title: "Open Surfshark Client"
-              subtitle: "Select any country or server in official GUI"
-              tag: "APP"
-              onClicked: root.openApp()
-            }
           }
 
-          // Recent Connections Section
+          // Recent Connections Section (Only shown when not actively filtering)
           Column {
             width: parent.width - Style.space(24)
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: Style.space(6)
-            visible: root.configured && root.daemonReady && root.recentList.length > 0
+            visible: root.configured && root.daemonReady && root.recentList.length > 0 && root.query === ""
 
             RowLayout {
               width: parent.width
@@ -591,12 +621,11 @@ Panel {
             }
 
             Repeater {
-              model: root.recentList
-              QuickActionTile {
+              model: root.recentList.slice(0, 3)
+              CompactActionTile {
                 required property var modelData
                 width: parent.width
                 title: root.plain(modelData.location || modelData.connectionName)
-                subtitle: root.plain(modelData.country)
                 tag: root.plain(modelData.countryCode || "")
                 isCurrent: root.shown && root.plain(modelData.location) === root.location
                 onClicked: root.connectTo(String(modelData.connectionName || ""))
@@ -608,21 +637,13 @@ Panel {
           Column {
             width: parent.width - Style.space(24)
             anchors.horizontalCenter: parent.horizontalCenter
-            spacing: Style.space(8)
+            spacing: Style.space(6)
             visible: root.configured && root.daemonReady
-
-            Text {
-              text: "GLOBAL LOCATIONS"
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              font.bold: true
-            }
 
             Rectangle {
               width: parent.width
-              height: Style.space(38)
-              radius: Style.space(8)
+              height: Style.space(34)
+              radius: Style.space(6)
               color: root.cardBackground
               border.color: searchInput.activeFocus ? root.accentColor : root.cardBorder
               border.width: 1
@@ -630,21 +651,21 @@ Panel {
               TextInput {
                 id: searchInput
                 anchors.fill: parent
-                anchors.leftMargin: Style.space(12)
-                anchors.rightMargin: Style.space(12)
+                anchors.leftMargin: Style.space(10)
+                anchors.rightMargin: Style.space(10)
                 verticalAlignment: TextInput.AlignVCenter
                 color: root.foreground
                 font.family: root.fontFamily
-                font.pixelSize: Style.font.body
+                font.pixelSize: Style.font.bodySmall
                 text: root.query
                 onTextChanged: root.query = text
 
                 Text {
                   visible: parent.text === ""
-                  text: "Filter by city or country (/)..."
+                  text: "Filter 100+ locations (/)..."
                   color: root.dim
                   font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
+                  font.pixelSize: Style.font.bodySmall
                   anchors.verticalCenter: parent.verticalCenter
                 }
 
@@ -663,13 +684,13 @@ Panel {
               }
             }
 
+            // Search Results (Only shown when query is present)
             Repeater {
               model: root.results
-              QuickActionTile {
+              CompactActionTile {
                 required property var modelData
                 width: parent.width
-                title: root.plain(modelData.location)
-                subtitle: root.plain(modelData.country)
+                title: root.plain(modelData.location) + " (" + root.plain(modelData.country) + ")"
                 tag: (modelData.load !== undefined && modelData.load !== null)
                      ? (modelData.load + "%") : String(modelData.countryCode || "")
                 isCurrent: root.shown && root.plain(modelData.location) === root.location
@@ -679,7 +700,7 @@ Panel {
 
             Text {
               visible: root.hiddenMatches > 0
-              text: "+" + root.hiddenMatches + " more locations match"
+              text: "+" + root.hiddenMatches + " more matches"
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -690,66 +711,50 @@ Panel {
     }
   }
 
-  // Modern interactive action tile component
-  component QuickActionTile: Rectangle {
-    id: tile
+  // Compact, modern action tile component
+  component CompactActionTile: Rectangle {
+    id: ctile
     property string title: ""
-    property string subtitle: ""
     property string tag: ""
     property bool isCurrent: false
     signal clicked()
 
-    implicitHeight: Style.space(46)
-    radius: Style.space(8)
-    color: mouseArea.containsMouse ? root.hoverFill : (tile.isCurrent ? root.activeFill : root.cardBackground)
-    border.color: tile.isCurrent ? root.accentColor : root.cardBorder
+    implicitHeight: Style.space(34)
+    radius: Style.space(6)
+    color: cmouse.containsMouse ? root.hoverFill : (ctile.isCurrent ? root.activeFill : root.cardBackground)
+    border.color: ctile.isCurrent ? root.accentColor : root.cardBorder
     border.width: 1
 
     Behavior on color { ColorAnimation { duration: 100 } }
 
     RowLayout {
       anchors.fill: parent
-      anchors.leftMargin: Style.space(12)
-      anchors.rightMargin: Style.space(12)
-      spacing: Style.space(10)
+      anchors.leftMargin: Style.space(10)
+      anchors.rightMargin: Style.space(10)
+      spacing: Style.space(8)
 
-      ColumnLayout {
+      Text {
+        text: ctile.title
+        color: root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        font.bold: ctile.isCurrent
+        elide: Text.ElideRight
         Layout.fillWidth: true
-        spacing: Style.space(1)
-
-        Text {
-          text: tile.title
-          color: root.foreground
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
-          font.bold: tile.isCurrent
-          elide: Text.ElideRight
-          Layout.fillWidth: true
-        }
-
-        Text {
-          text: tile.subtitle
-          color: root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          elide: Text.ElideRight
-          Layout.fillWidth: true
-          visible: tile.subtitle !== ""
-        }
       }
 
       Rectangle {
-        visible: tile.tag !== ""
-        implicitWidth: tagText.implicitWidth + Style.space(10)
-        implicitHeight: Style.space(20)
-        radius: Style.space(4)
-        color: tile.isCurrent ? root.accentColor : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.08)
+        visible: ctile.tag !== ""
+        implicitWidth: ctagText.implicitWidth + Style.space(8)
+        implicitHeight: Style.space(18)
+        radius: Style.space(3)
+        color: ctile.isCurrent ? root.accentColor : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.08)
 
         Text {
-          id: tagText
+          id: ctagText
           anchors.centerIn: parent
-          text: tile.tag
-          color: tile.isCurrent ? "#000000" : root.dim
+          text: ctile.tag
+          color: ctile.isCurrent ? "#000000" : root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
           font.bold: true
@@ -758,11 +763,11 @@ Panel {
     }
 
     MouseArea {
-      id: mouseArea
+      id: cmouse
       anchors.fill: parent
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
-      onClicked: tile.clicked()
+      onClicked: ctile.clicked()
     }
   }
 }
