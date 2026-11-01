@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "id": "daailouivan.surfshark",
+  "name": "Surfshark",
+  "version": "1.0.0",
+  "author": "daailouivan",
+  "license": "MIT",
+  "description": "An Omarchy plugin for Surfshark written in Rust.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Widget.qml"
+  },
+  "barWidget": {
+    "displayName": "Surfshark",
+    "description": "Surfshark VPN bar widget for Omarchy powered by a native Rust backend.",
+    "category": "Network",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 20,
+      "usLocation": "us-nyc.prod.surfshark.com"
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "State refresh (seconds)",
+        "min": 5,
+        "max": 600,
+        "step": 5,
+        "defaultValue": 20
+      },
+      {
+        "key": "usLocation",
+        "type": "string",
+        "label": "United States shortcut target",
+        "defaultValue": "us-nyc.prod.surfshark.com"
+      }
+    ]
+  },
+  "homepage": "https://github.com/daailouivan/omarchy-surfshark",
+  "repository": "https://github.com/daailouivan/omarchy-surfshark"
+}
