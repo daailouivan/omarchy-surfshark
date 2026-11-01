@@ -249,29 +249,34 @@ fn cmd_same() {
 }
 
 fn cmd_usa(preferred: Option<&str>) {
-    if trigger_app_action("United States").is_ok() {
+    if trigger_app_action("usa").is_ok() || trigger_app_action("United States").is_ok() {
         println!("Connecting to United States...");
         return;
     }
-    let servers = read_servers();
-    if let Some(s) = pick_usa(&servers, preferred) {
-        do_connect(s);
-    } else {
-        eprintln!("no available US server found");
-        exit(5);
+    if let Some(pref) = preferred {
+        if trigger_app_action(pref).is_ok() {
+            println!("Connecting to {}...", pref);
+            return;
+        }
     }
+    let _ = trigger_app_action("open");
+    println!("Opened Surfshark app to connect to United States");
 }
 
 fn cmd_random() {
-    let servers = read_servers();
-    let geo = fetch_geo();
-    let cur = read_current();
-    if let Some(s) = pick_random(&servers, &geo, cur.as_deref()) {
-        do_connect(s);
-    } else {
-        eprintln!("no available random server found");
-        exit(5);
+    let recents = get_merged_recent(Some(5));
+    if !recents.is_empty() {
+        use rand::seq::SliceRandom;
+        let mut rng = rand::thread_rng();
+        if let Some(r) = recents.choose(&mut rng) {
+            if trigger_app_action(&r.location).is_ok() {
+                println!("Connecting to {} · {}...", r.location, r.country);
+                return;
+            }
+        }
     }
+    let _ = trigger_app_action("quick_connect");
+    println!("Connecting via Surfshark...");
 }
 
 fn cmd_connect(host: &str) {
@@ -285,24 +290,19 @@ fn cmd_connect(host: &str) {
         }
     }
 
-    if let Some(s) = target {
-        do_connect(s);
-    } else {
-        if trigger_app_action(host).is_ok() {
-            println!("Connecting to {}...", host);
-            return;
-        }
-        eprintln!("server not found: {}", host);
-        exit(5);
+    if trigger_app_action(host).is_ok() {
+        println!("Connecting to {}...", host);
+        return;
     }
+
+    // Never execute unauthenticated raw do_connect which cuts off network
+    let _ = trigger_app_action("open");
+    println!("Opened Surfshark app for {}", host);
 }
 
 fn cmd_off() {
     let _ = trigger_app_action("disconnect");
-    if let Err(e) = disconnect_all() {
-        eprintln!("disconnect error: {}", e);
-        exit(4);
-    }
+    let _ = disconnect_all();
     println!("disconnected");
 }
 

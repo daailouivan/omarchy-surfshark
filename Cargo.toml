@@ -1,6 +1,6 @@
 [package]
 name = "omarchy-surfshark"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 authors = ["daailouivan <ivan910209@gmail.com>"]
 description = "An Omarchy plugin for Surfshark written in Rust"

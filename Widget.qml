@@ -174,6 +174,7 @@ Panel {
 
   onOpenedChanged: {
     if (opened) {
+      root.contextMenuOpen = false
       loadLocations()
     } else {
       query = ""
@@ -265,42 +266,127 @@ Panel {
     function openApp(): string { root.openApp(); return "ok" }
   }
 
-  // Right-click Quick Control Context Menu
-  Menu {
-    id: contextMenu
+  // Right-click Quick Control Context Menu (Native Omarchy PopupCard for Wayland)
+  property bool contextMenuOpen: false
 
-    MenuItem {
-      text: root.shown ? "Disconnect VPN" : "Quick Connect"
-      onTriggered: root.toggleVpn()
-    }
+  PopupCard {
+    id: contextPopup
+    anchorItem: barButton
+    owner: root
+    bar: root.bar
+    open: root.contextMenuOpen
+    padding: Style.space(8)
+    contentWidth: contextPopup.fittedContentWidth(Style.space(240))
+    contentHeight: contextPopup.fittedContentHeight(contextColumn.implicitHeight)
 
-    MenuItem {
-      text: "Open Surfshark App"
-      onTriggered: root.openApp()
-    }
+    Column {
+      id: contextColumn
+      width: parent.width
+      spacing: Style.space(3)
 
-    MenuSeparator {}
+      Item {
+        width: parent.width
+        implicitHeight: Style.space(24)
 
-    MenuItem {
-      text: "Connect: Fastest Location"
-      onTriggered: root.runAction("fastest")
-    }
+        RowLayout {
+          anchors.fill: parent
+          anchors.leftMargin: Style.space(6)
+          anchors.rightMargin: Style.space(6)
+          spacing: Style.space(6)
 
-    MenuItem {
-      text: "Connect: United States (" + root.usLabel + ")"
-      onTriggered: root.runAction("usa")
-    }
+          SurfsharkIcon {
+            Layout.preferredWidth: Style.space(14)
+            Layout.preferredHeight: Style.space(14)
+            color: root.barIconColor
+            active: root.shown
+            crossed: !root.shown
+          }
 
-    MenuSeparator {}
+          Text {
+            text: "Surfshark Quick Menu"
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            font.bold: true
+            Layout.fillWidth: true
+          }
 
-    MenuItem {
-      text: "Refresh Status"
-      onTriggered: root.refresh()
-    }
+          Rectangle {
+            width: Style.space(6)
+            height: Style.space(6)
+            radius: width / 2
+            color: root.shown ? root.successColor : root.dim
+          }
+        }
+      }
 
-    MenuItem {
-      text: "Open Widget Details..."
-      onTriggered: root.open()
+      Rectangle {
+        width: parent.width
+        height: 1
+        color: root.cardBorder
+        opacity: 0.5
+      }
+
+      ContextMenuItem {
+        iconText: root.shown ? "⏹" : "⚡"
+        text: root.shown ? "Disconnect VPN" : "Quick Connect"
+        onTriggered: {
+          root.contextMenuOpen = false
+          root.toggleVpn()
+        }
+      }
+
+      ContextMenuItem {
+        iconText: "⚡"
+        text: "Fastest Location"
+        onTriggered: {
+          root.contextMenuOpen = false
+          root.runAction("fastest")
+        }
+      }
+
+      ContextMenuItem {
+        iconText: "🇺🇸"
+        text: "United States (" + root.usLabel + ")"
+        onTriggered: {
+          root.contextMenuOpen = false
+          root.runAction("usa")
+        }
+      }
+
+      Rectangle {
+        width: parent.width
+        height: 1
+        color: root.cardBorder
+        opacity: 0.5
+      }
+
+      ContextMenuItem {
+        iconText: "🖥️"
+        text: "Open Surfshark App"
+        onTriggered: {
+          root.contextMenuOpen = false
+          root.openApp()
+        }
+      }
+
+      ContextMenuItem {
+        iconText: "🔄"
+        text: "Refresh Status"
+        onTriggered: {
+          root.contextMenuOpen = false
+          root.refresh()
+        }
+      }
+
+      ContextMenuItem {
+        iconText: "⚙️"
+        text: "Open Details Panel..."
+        onTriggered: {
+          root.contextMenuOpen = false
+          root.open()
+        }
+      }
     }
   }
 
@@ -325,10 +411,11 @@ Panel {
     }
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.RightButton) {
-        contextMenu.popup()
+        root.contextMenuOpen = !root.contextMenuOpen
       } else if (buttonCode === Qt.MiddleButton) {
         root.refresh()
       } else {
+        root.contextMenuOpen = false
         root.toggle()
       }
     }
@@ -341,8 +428,8 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(360))
-    contentHeight: panel.fittedContentHeight(panelColumn.implicitHeight, Style.space(430))
+    contentWidth: panel.fittedContentWidth(Style.space(380))
+    contentHeight: panel.fittedContentHeight(panelColumn.implicitHeight, Style.space(450))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -549,41 +636,38 @@ Panel {
             }
           }
 
-          // Quick Routing Grid (Compact 2x2)
-          GridLayout {
+          // Quick Routing Actions (Full-width sleek tiles to prevent any truncation)
+          Column {
             width: parent.width - Style.space(24)
             anchors.horizontalCenter: parent.horizontalCenter
-            columns: 2
-            rowSpacing: Style.space(6)
-            columnSpacing: Style.space(6)
+            spacing: Style.space(6)
             visible: root.configured && root.daemonReady
 
-            CompactActionTile {
-              Layout.fillWidth: true
+            ActionRowTile {
+              width: parent.width
+              iconText: "⚡"
               title: "Fastest Location"
+              subtitle: "Recommended route · Low latency"
               tag: "AUTO"
               onClicked: root.runAction("fastest")
             }
 
-            CompactActionTile {
-              Layout.fillWidth: true
-              title: "Open Desktop App"
-              tag: "APP"
-              onClicked: root.openApp()
-            }
-
-            CompactActionTile {
-              Layout.fillWidth: true
+            ActionRowTile {
+              width: parent.width
+              iconText: "🇺🇸"
               title: "United States"
+              subtitle: root.usLabel
               tag: "US"
               onClicked: root.runAction("usa")
             }
 
-            CompactActionTile {
-              Layout.fillWidth: true
-              title: "Random Shuffle"
-              tag: "DICE"
-              onClicked: root.runAction("random")
+            ActionRowTile {
+              width: parent.width
+              iconText: "🖥️"
+              title: "Open Desktop App"
+              subtitle: "Full server list & account settings"
+              tag: "APP"
+              onClicked: root.openApp()
             }
           }
 
@@ -622,13 +706,15 @@ Panel {
 
             Repeater {
               model: root.recentList.slice(0, 3)
-              CompactActionTile {
+              ActionRowTile {
                 required property var modelData
                 width: parent.width
+                iconText: "🌐"
                 title: root.plain(modelData.location || modelData.connectionName)
+                subtitle: root.plain(modelData.country || "")
                 tag: root.plain(modelData.countryCode || "")
                 isCurrent: root.shown && root.plain(modelData.location) === root.location
-                onClicked: root.connectTo(String(modelData.connectionName || ""))
+                onClicked: root.connectTo(String(modelData.connectionName || modelData.location || ""))
               }
             }
           }
@@ -671,7 +757,7 @@ Panel {
 
                 onAccepted: {
                   if (root.results.length > 0)
-                    root.connectTo(String(root.results[0].connectionName))
+                    root.connectTo(String(root.results[0].connectionName || root.results[0].location || ""))
                 }
 
                 Keys.onPressed: function(event) {
@@ -687,14 +773,16 @@ Panel {
             // Search Results (Only shown when query is present)
             Repeater {
               model: root.results
-              CompactActionTile {
+              ActionRowTile {
                 required property var modelData
                 width: parent.width
-                title: root.plain(modelData.location) + " (" + root.plain(modelData.country) + ")"
+                iconText: "📍"
+                title: root.plain(modelData.location)
+                subtitle: root.plain(modelData.country)
                 tag: (modelData.load !== undefined && modelData.load !== null)
                      ? (modelData.load + "%") : String(modelData.countryCode || "")
                 isCurrent: root.shown && root.plain(modelData.location) === root.location
-                onClicked: root.connectTo(String(modelData.connectionName || ""))
+                onClicked: root.connectTo(String(modelData.connectionName || modelData.location || ""))
               }
             }
 
@@ -711,18 +799,20 @@ Panel {
     }
   }
 
-  // Compact, modern action tile component
-  component CompactActionTile: Rectangle {
-    id: ctile
+  // Modern, full-width action tile component with zero truncation
+  component ActionRowTile: Rectangle {
+    id: arow
+    property string iconText: ""
     property string title: ""
+    property string subtitle: ""
     property string tag: ""
     property bool isCurrent: false
     signal clicked()
 
-    implicitHeight: Style.space(34)
+    implicitHeight: arow.subtitle !== "" ? Style.space(38) : Style.space(34)
     radius: Style.space(6)
-    color: cmouse.containsMouse ? root.hoverFill : (ctile.isCurrent ? root.activeFill : root.cardBackground)
-    border.color: ctile.isCurrent ? root.accentColor : root.cardBorder
+    color: amouse.containsMouse ? root.hoverFill : (arow.isCurrent ? root.activeFill : root.cardBackground)
+    border.color: arow.isCurrent ? root.accentColor : root.cardBorder
     border.width: 1
 
     Behavior on color { ColorAnimation { duration: 100 } }
@@ -731,30 +821,53 @@ Panel {
       anchors.fill: parent
       anchors.leftMargin: Style.space(10)
       anchors.rightMargin: Style.space(10)
-      spacing: Style.space(8)
+      spacing: Style.space(10)
 
       Text {
-        text: ctile.title
-        color: root.foreground
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.bodySmall
-        font.bold: ctile.isCurrent
-        elide: Text.ElideRight
+        visible: arow.iconText !== ""
+        text: arow.iconText
+        font.pixelSize: Style.font.body
+        Layout.alignment: Qt.AlignVCenter
+      }
+
+      ColumnLayout {
         Layout.fillWidth: true
+        Layout.alignment: Qt.AlignVCenter
+        spacing: 1
+
+        Text {
+          text: arow.title
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          font.bold: arow.isCurrent || arow.subtitle !== ""
+          elide: Text.ElideRight
+          Layout.fillWidth: true
+        }
+
+        Text {
+          visible: arow.subtitle !== ""
+          text: arow.subtitle
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          elide: Text.ElideRight
+          Layout.fillWidth: true
+        }
       }
 
       Rectangle {
-        visible: ctile.tag !== ""
-        implicitWidth: ctagText.implicitWidth + Style.space(8)
+        visible: arow.tag !== ""
+        implicitWidth: atagText.implicitWidth + Style.space(8)
         implicitHeight: Style.space(18)
         radius: Style.space(3)
-        color: ctile.isCurrent ? root.accentColor : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.08)
+        color: arow.isCurrent ? root.accentColor : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.08)
 
         Text {
-          id: ctagText
+          id: atagText
           anchors.centerIn: parent
-          text: ctile.tag
-          color: ctile.isCurrent ? "#000000" : root.dim
+          text: arow.tag
+          color: arow.isCurrent ? "#000000" : root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
           font.bold: true
@@ -763,11 +876,56 @@ Panel {
     }
 
     MouseArea {
-      id: cmouse
+      id: amouse
       anchors.fill: parent
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
-      onClicked: ctile.clicked()
+      onClicked: arow.clicked()
+    }
+  }
+
+  // Themed context menu item delegate matching Omarchy style
+  component ContextMenuItem: Rectangle {
+    id: cmi
+    property string iconText: ""
+    property string text: ""
+    signal triggered()
+
+    width: parent.width
+    implicitHeight: Style.space(28)
+    radius: Math.max(2, Style.cornerRadius)
+    color: cmimouse.containsMouse ? root.hoverFill : "transparent"
+
+    Behavior on color { ColorAnimation { duration: 80 } }
+
+    RowLayout {
+      anchors.fill: parent
+      anchors.leftMargin: Style.space(8)
+      anchors.rightMargin: Style.space(8)
+      spacing: Style.space(8)
+
+      Text {
+        text: cmi.iconText
+        font.pixelSize: Style.font.bodySmall
+        color: root.foreground
+      }
+
+      Text {
+        text: cmi.text
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        color: root.foreground
+        elide: Text.ElideRight
+        Layout.fillWidth: true
+      }
+    }
+
+    MouseArea {
+      id: cmimouse
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: cmi.triggered()
     }
   }
 }

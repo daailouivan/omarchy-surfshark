@@ -332,21 +332,48 @@ pub fn trigger_menu_event(bus: &str, item_id: i32) -> Result<(), String> {
     Ok(())
 }
 
+pub fn focus_surfshark_window() {
+    // 1. Check hyprctl clients to focus workspace if Surfshark is already open
+    if let Ok(output) = std::process::Command::new("hyprctl")
+        .args(["clients", "-j"])
+        .output()
+    {
+        if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+            if let Some(arr) = val.as_array() {
+                for c in arr {
+                    if c.get("class").and_then(|v| v.as_str()) == Some("Surfshark") {
+                        if let Some(ws) = c.get("workspace").and_then(|w| w.get("id")).and_then(|i| i.as_i64()) {
+                            let lua = format!("hl.dsp.focus({{ workspace = \"{}\" }})", ws);
+                            let _ = std::process::Command::new("hyprctl")
+                                .args(["dispatch", &lua])
+                                .output();
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Launch app if not running
+    let _ = std::process::Command::new("gtk-launch")
+        .arg("surfshark")
+        .spawn()
+        .or_else(|_| std::process::Command::new("/opt/Surfshark/surfshark").spawn());
+}
+
 pub fn trigger_app_action(action: &str) -> Result<(), String> {
     let bus = find_surfshark_tray_bus();
 
     if action == "open" || action == "open_app" {
+        focus_surfshark_window();
         if let Some(ref b) = bus {
             if let Ok(menu) = get_tray_menu(b) {
                 if let Some(item) = menu.iter().find(|i| i.label.starts_with("Open Surfshark")) {
-                    return trigger_menu_event(b, item.id);
+                    let _ = trigger_menu_event(b, item.id);
                 }
             }
         }
-        // Fallback spawn app directly
-        std::process::Command::new("/opt/Surfshark/surfshark")
-            .spawn()
-            .map_err(|e| format!("failed to launch Surfshark GUI: {}", e))?;
         return Ok(());
     }
 
@@ -356,14 +383,15 @@ pub fn trigger_app_action(action: &str) -> Result<(), String> {
             if action == "disconnect" || action == "off" {
                 return disconnect_all();
             }
-            return Err("Surfshark desktop client is not running. Please open Surfshark first.".to_string());
+            focus_surfshark_window();
+            return Err("Surfshark desktop client is not running. Opening app...".to_string());
         }
     };
 
     let menu = get_tray_menu(&b)?;
 
     match action {
-        "quick_connect" | "on" => {
+        "quick_connect" | "on" | "fastest" => {
             if let Some(item) = menu.iter().find(|i| i.label.contains("Quick connect") && i.visible) {
                 trigger_menu_event(&b, item.id)
             } else if let Some(recent) = menu.iter().find(|i| i.toggle_state.is_some()) {
@@ -381,6 +409,17 @@ pub fn trigger_app_action(action: &str) -> Result<(), String> {
             let _ = disconnect_all();
             res
         }
+        "usa" | "us" => {
+            if let Some(item) = menu.iter().find(|i| {
+                let l = i.label.to_lowercase();
+                l.contains("united states") || l.contains("us -") || l.contains("usa")
+            }) {
+                trigger_menu_event(&b, item.id)
+            } else {
+                focus_surfshark_window();
+                Err("No US location in quick tray. Opened Surfshark app.".to_string())
+            }
+        }
         "recent" => {
             if let Some(recent) = menu.iter().find(|i| i.toggle_state.is_some()) {
                 trigger_menu_event(&b, recent.id)
@@ -390,16 +429,31 @@ pub fn trigger_app_action(action: &str) -> Result<(), String> {
         }
         other => {
             let lower = other.to_lowercase();
+            // 1. Direct label contains match
             if let Some(item) = menu.iter().find(|i| {
                 let l = i.label.to_lowercase();
                 l.contains(&lower) || lower.contains(&l)
             }) {
-                trigger_menu_event(&b, item.id)
-            } else {
-                // If specific location not in tray recents, open the official client window
-                let _ = trigger_app_action("open");
-                Err(format!("'{}' not in quick tray menu. Opened Surfshark client to select.", other))
+                return trigger_menu_event(&b, item.id);
             }
+
+            // 2. Word-by-word token match (e.g. "queretaro", "mexico", "los angeles")
+            let words: Vec<&str> = lower
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|s| s.len() >= 3)
+                .collect();
+            if !words.is_empty() {
+                if let Some(item) = menu.iter().find(|i| {
+                    let l = i.label.to_lowercase();
+                    words.iter().any(|&w| l.contains(w))
+                }) {
+                    return trigger_menu_event(&b, item.id);
+                }
+            }
+
+            // Fallback: focus client window so user can connect safely without network breakage
+            focus_surfshark_window();
+            Err(format!("'{}' not in quick tray. Opened Surfshark app to connect.", other))
         }
     }
 }

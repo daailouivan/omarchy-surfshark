@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "daailouivan.surfshark",
   "name": "Surfshark",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": "daailouivan",
   "license": "MIT",
   "description": "An Omarchy plugin for Surfshark written in Rust.",
